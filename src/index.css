@@ -348,6 +348,7 @@ a:hover {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
 
 /* Futuristic Tracking Visuals (Reverted) */
 @keyframes pulse-ring {
