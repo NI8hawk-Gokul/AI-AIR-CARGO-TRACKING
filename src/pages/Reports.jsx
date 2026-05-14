@@ -1,19 +1,25 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Card from '../components/Card';
-import { Download, Filter } from 'lucide-react';
+import { Download, Filter, Search, X } from 'lucide-react';
+import { getReportData, exportToCSV } from '../services/dataService';
 
 const Reports = () => {
-  const reportData = [
-    { id: 1, awb: '176-12345678', origin: 'DXB', dest: 'LHR', date: '2023-10-25', status: 'Arrived' },
-    { id: 2, awb: '176-87654321', origin: 'JFK', dest: 'CDG', date: '2023-10-26', status: 'Pending' },
-    { id: 3, awb: '176-11223344', origin: 'SIN', dest: 'SYD', date: '2023-10-26', status: 'Delayed' },
-    { id: 4, awb: '176-99887766', origin: 'FRA', dest: 'DXB', date: '2023-10-27', status: 'Arrived' },
-    { id: 5, awb: '176-55443322', origin: 'HKG', dest: 'LAX', date: '2023-10-27', status: 'In Transit' },
-  ];
+  const [reportData, setReportData] = useState([]);
+  const [filters, setFilters] = useState({ status: 'All', search: '' });
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+
+  useEffect(() => {
+    setReportData(getReportData(filters));
+  }, [filters]);
+
+  const handleExport = () => {
+    exportToCSV(reportData);
+  };
 
   const getStatusStyle = (status) => {
     switch (status) {
-      case 'Arrived': return { bg: 'var(--status-arrived)15', color: 'var(--status-arrived)' };
+      case 'Arrived': 
+      case 'Delivered': return { bg: 'var(--status-arrived)15', color: 'var(--status-arrived)' };
       case 'Delayed': return { bg: 'var(--status-delayed)15', color: 'var(--status-delayed)' };
       case 'Pending': return { bg: 'var(--status-pending)15', color: 'var(--status-pending)' };
       default: return { bg: 'var(--status-transit)15', color: 'var(--status-transit)' };
@@ -28,14 +34,57 @@ const Reports = () => {
           <p style={{ color: 'var(--text-secondary)' }}>View daily and weekly summaries of cargo movements.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Filter size={18} /> Filter
-          </button>
-          <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ position: 'relative' }}>
+            <button 
+              onClick={() => setShowFilterMenu(!showFilterMenu)}
+              className="btn-secondary" 
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <Filter size={18} /> {filters.status === 'All' ? 'Filter' : `Filter: ${filters.status}`}
+            </button>
+            
+            {showFilterMenu && (
+              <div className="absolute top-full right-0 mt-2 w-48 rounded-xl shadow-2xl border z-50 overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                {['All', 'In Transit', 'Delayed', 'Arrived', 'Delivered', 'Pending'].map(s => (
+                  <button 
+                    key={s}
+                    onClick={() => { setFilters({ ...filters, status: s }); setShowFilterMenu(false); }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <button onClick={handleExport} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Download size={18} /> Export CSV
           </button>
         </div>
       </div>
+
+      <Card style={{ padding: '1rem' }}>
+        <div style={{ position: 'relative', maxWidth: '400px' }}>
+          <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+          <input 
+            type="text" 
+            placeholder="Search by AWB Number..." 
+            className="input-field" 
+            style={{ paddingLeft: '3rem' }}
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+          />
+          {filters.search && (
+            <button 
+              onClick={() => setFilters({ ...filters, search: '' })}
+              style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }}
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
+      </Card>
 
       <Card style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
@@ -49,7 +98,7 @@ const Reports = () => {
               </tr>
             </thead>
             <tbody>
-              {reportData.map((row) => {
+              {reportData.length > 0 ? reportData.map((row) => {
                 const styles = getStatusStyle(row.status);
                 return (
                   <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s' }}>
@@ -62,14 +111,20 @@ const Reports = () => {
                         padding: '0.35rem 0.85rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 'bold',
                         display: 'inline-flex', alignItems: 'center', gap: '0.25rem'
                       }}>
-                        {row.status === 'Arrived' && '✅ '}
+                        {(row.status === 'Arrived' || row.status === 'Delivered') && '✅ '}
                         {row.status === 'Pending' && '⏳ '}
                         {row.status}
                       </span>
                     </td>
                   </tr>
                 );
-              })}
+              }) : (
+                <tr>
+                  <td colSpan="4" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    No shipments found matching your filters.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

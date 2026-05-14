@@ -6,6 +6,7 @@ import Tracking from './pages/Tracking';
 import AddShipment from './pages/AddShipment';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
+import PublicTracking from './pages/PublicTracking';
 import './App.css';
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/track" element={<PublicTracking />} />
         
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
