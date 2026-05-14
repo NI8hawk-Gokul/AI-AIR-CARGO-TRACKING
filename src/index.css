@@ -348,5 +348,24 @@ a:hover {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+
+/* Futuristic Tracking Visuals (Reverted) */
+@keyframes pulse-ring {
+  0% { transform: scale(0.33); opacity: 0; }
+  80%, 100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+  100% { transform: scale(0.8); opacity: 0.5; }
+}
+
+.plane-glow {
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
+}
+
+.pulse-geofence {
+  animation: pulse-ring 3s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
 }
 

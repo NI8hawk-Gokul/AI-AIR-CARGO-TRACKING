@@ -11,6 +11,7 @@ export const SHIPMENT_DATA = {
     flight: "QR8613",
     currentLocation: [50.0379, 8.5622],
     route: [[23.0772, 72.6347], [25.2731, 51.6081], [50.0379, 8.5622]],
+    telemetry: { altitude: "0 ft", speed: "0 km/h", temp: "18°C", humidity: "45%" },
     eta: "Delivered",
     delayRisk: "None",
     date: "2024-01-28",
@@ -31,6 +32,7 @@ export const SHIPMENT_DATA = {
     flight: "EY204",
     currentLocation: [19.0896, 72.8656],
     route: [[24.4330, 54.6511], [19.0896, 72.8656]],
+    telemetry: { altitude: "0 ft", speed: "0 km/h", temp: "22°C", humidity: "60%" },
     eta: "Delivered",
     delayRisk: "None",
     date: "2023-12-12",
@@ -50,53 +52,23 @@ export const SHIPMENT_DATA = {
     pieces: 2,
     flight: "NH10",
     currentLocation: [40.6413, -100.7781],
-    route: [[35.7720, 140.3929], [40.6413, -100.7781], [40.6413, -73.7781]],
+    route: [
+      [35.7720, 140.3929], // NRT
+      [45.0000, 170.0000], // Pacific
+      [50.0000, -150.0000], // Alaska
+      [40.6413, -100.7781], // USA
+      [40.6413, -73.7781]   // JFK
+    ],
+    telemetry: { altitude: "36,000 ft", speed: "890 km/h", temp: "-52°C", humidity: "12%" },
     eta: "In 4h 20m",
     delayRisk: "Low",
     date: "2026-05-14",
     events: [
       { time: "May 13, 16:20", location: "Tokyo (NRT)", status: "Shipment Accepted", type: "package", completed: true },
+      { time: "May 14, 11:00", location: "Tokyo (NRT)", status: "Departed on Flight NH10", type: "plane", completed: true },
+      { time: "May 14, 22:45", location: "In Air", status: "Crossing Pacific Ocean", type: "clock", completed: true },
       { time: "Pending", location: "New York (JFK)", status: "Estimated Arrival", type: "map-pin", completed: false }
     ]
-  },
-  "176-12345678": {
-    awb: "176-12345678",
-    carrier: "Emirates SkyCargo",
-    status: "In Transit",
-    origin: "DXB - Dubai, UAE",
-    destination: "LHR - London, UK",
-    estimatedDelivery: "May 14, 2026 - 18:30",
-    weight: "2,100 kg",
-    pieces: 8,
-    flight: "EK001",
-    date: "2026-05-14",
-    events: []
-  },
-  "176-87654321": {
-    awb: "176-87654321",
-    carrier: "Emirates SkyCargo",
-    status: "Delayed",
-    origin: "DXB - Dubai, UAE",
-    destination: "DEL - Delhi, India",
-    estimatedDelivery: "May 15, 2026 - 12:00",
-    weight: "1,500 kg",
-    pieces: 5,
-    flight: "EK502",
-    date: "2026-05-14",
-    events: []
-  },
-  "176-11223344": {
-    awb: "176-11223344",
-    carrier: "Singapore Airlines Cargo",
-    status: "Arrived",
-    origin: "SIN - Singapore",
-    destination: "SYD - Sydney, Australia",
-    estimatedDelivery: "May 13, 2026 - 10:00",
-    weight: "950 kg",
-    pieces: 3,
-    flight: "SQ7291",
-    date: "2026-05-13",
-    events: []
   }
 };
 
