@@ -15,9 +15,20 @@ export const SHIPMENT_DATA = {
     eta: "Delivered",
     delayRisk: "None",
     date: "2024-01-28",
+    flightSegments: [
+      { origin: 'AMD', destination: 'DOH', flight: 'QR-8613 (FRT)', depTime: '24-Jan-24 09:45', arrTime: '24-Jan-24 10:59', pieces: 1 },
+      { origin: 'DOH', destination: 'FRA', flight: 'QR-0071 (PAX)', depTime: '25-Jan-24 14:13', arrTime: '25-Jan-24 18:58', pieces: 1 }
+    ],
     events: [
-      { time: "Jan 23, 20:41", location: "Ahmedabad (AMD)", status: "Received from shipper", type: "package", completed: true },
-      { time: "Jan 28, 19:08", location: "Frankfurt (FRA)", status: "Delivered to Consignee", type: "check-circle", completed: true }
+      { time: "Sun, 28 Jan 2024 19:08", location: "FRA", status: "Delivered in FRA", details: "1 Pcs | 49 Kg", completed: true },
+      { time: "Fri, 26 Jan 2024 00:32", location: "FRA", status: "Notified consignee", details: "1 Pcs | 49 Kg", completed: true },
+      { time: "Fri, 26 Jan 2024 00:17", location: "FRA", status: "Received in FRA", details: "1 Pcs | 49 Kg", completed: true },
+      { time: "Thu, 25 Jan 2024 18:58", location: "FRA", status: "Arrived in FRA on QR 0071/25-Jan-2024", details: "1 Pcs | 49 Kg", completed: true },
+      { time: "Thu, 25 Jan 2024 14:13", location: "DOH", status: "Departed from DOH on QR0071/25-Jan-2024", details: "1 Pcs | 49 Kg | 0.114 m³", completed: true },
+      { time: "Wed, 24 Jan 2024 15:10", location: "DOH", status: "Received in DOH", details: "1 Pcs | 49 Kg | 0.114 m³", completed: true },
+      { time: "Wed, 24 Jan 2024 10:59", location: "DOH", status: "Arrived in DOH on QR 8613/24-Jan-2024", details: "1 Pcs | 49 Kg | 0.114 m³", completed: true },
+      { time: "Wed, 24 Jan 2024 09:45", location: "AMD", status: "Departed from AMD on QR8613/24-Jan-2024", details: "1 Pcs | 49 Kg | 0.114 m³", completed: true },
+      { time: "Tue, 23 Jan 2024 20:41", location: "AMD", status: "Received from shipper in AMD", details: "1 Pcs | 49 Kg | 0.114 m³", completed: true }
     ]
   },
   "607-32728242": {

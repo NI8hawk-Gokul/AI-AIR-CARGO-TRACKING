@@ -1,18 +1,102 @@
 import { SHIPMENT_DATA, ALL_SHIPMENTS } from '../data/shipmentData';
 
+// Airline prefix mapping (client-side copy for URL building without server)
+const AIRLINE_PREFIXES = {
+  '157': { name: 'Qatar Airways Cargo', url: (awb) => `https://www.qrcargo.com/s/tracking?awb=${awb}` },
+  '176': { name: 'Emirates SkyCargo', url: (awb) => `https://eskycargo.emirates.com/app/offerBooking/#/shipment-tracking?awbNo=${awb.replace('-', '')}` },
+  '607': { name: 'Etihad Cargo', url: (awb) => `https://etihadcargo.com/en/e-services/track-your-shipments?awb=${awb.replace('-', '')}` },
+  '098': { name: 'Air India Cargo', url: (awb) => `https://www.aikinetix.com/search?type=awb&query=${awb.replace('-', '')}` },
+  '585': { name: 'IndiGo CarGo', url: (awb) => `https://www.goindigo.in/cargo/tracking.html?awb=${awb}` },
+  '220': { name: 'Lufthansa Cargo', url: (awb) => `https://www.lufthansa-cargo.com/tracking/shipment/${awb.replace('-', '')}` },
+  '125': { name: 'British Airways Cargo', url: (awb) => `https://www.iagcargo.com/track-shipment?awb=${awb.replace('-', '')}` },
+  '117': { name: 'Turkish Airlines Cargo', url: (awb) => `https://www.turkishcargo.com/en/tracking?awb=${awb.replace('-', '')}` },
+  '006': { name: 'Delta Cargo', url: (awb) => `https://www.deltacargo.com/Cargo/trackShipment?awbNumber=${awb.replace('-', '')}` },
+  '016': { name: 'United Cargo', url: (awb) => `https://www.unitedcargo.com/tracking?awb=${awb.replace('-', '')}` },
+  '001': { name: 'American Airlines Cargo', url: (awb) => `https://www.aacargo.com/shipping/tracking.jhtml?awb=${awb.replace('-', '')}` },
+  '023': { name: 'FedEx', url: (awb) => `https://www.fedex.com/fedextrack/?trknbr=${awb.replace('-', '')}` },
+  '160': { name: 'Cathay Cargo', url: (awb) => `https://www.cathaycargo.com/cargo-tracking/?awb=${awb.replace('-', '')}` },
+  '205': { name: 'ANA Cargo', url: (awb) => `https://cargo.ana.co.jp/anaicargo/tracking?awb=${awb.replace('-', '')}` },
+  '180': { name: 'Korean Air Cargo', url: (awb) => `https://cargo.koreanair.com/tracking?awb=${awb.replace('-', '')}` },
+  '057': { name: 'Air France Cargo', url: (awb) => `https://www.afklcargo.com/mycargo/shipment/detail/${awb.replace('-', '')}` },
+  '071': { name: 'Ethiopian Airlines Cargo', url: (awb) => `https://www.ethiopianairlinescargo.com/tracking?awb=${awb.replace('-', '')}` },
+  '045': { name: 'LATAM Cargo', url: (awb) => `https://www.latamcargo.com/en/trackshipment?docNumber=${awb.replace('-', '')}` },
+  '164': { name: 'Saudia Cargo', url: (awb) => `https://www.saudiacargo.com/tracking?awb=${awb}` },
+  '047': { name: 'Cargolux', url: (awb) => `https://www.cargolux.com/e-services/tracking?awb=${awb}` },
+  '014': { name: 'Air Canada Cargo', url: (awb) => `https://www.aircanadacargo.com/tracking?awb=${awb.replace('-', '')}` },
+  '131': { name: 'Japan Airlines Cargo', url: (awb) => `https://www.jalcargo.com/cms/tracking?awb=${awb.replace('-', '')}` },
+};
+
 /**
  * Data Service for Dashboard, Tracking, and Reports
  */
-export const trackShipment = async (awb) => {
-  await new Promise(resolve => setTimeout(resolve, 800));
-  const normalizedAwb = awb.trim().toUpperCase();
-  if (SHIPMENT_DATA[normalizedAwb]) {
-    return { success: true, data: SHIPMENT_DATA[normalizedAwb] };
+
+/**
+ * Extract 3-digit airline prefix from AWB
+ */
+function extractPrefix(awb) {
+  return awb.replace(/[\s-]/g, '').substring(0, 3);
+}
+
+/**
+ * Get the direct carrier tracking URL for a given AWB
+ * @param {string} awb - AWB number (e.g. "157-89692853")
+ * @returns {{ url: string, carrierName: string } | null}
+ */
+export const getCarrierTrackingUrl = (awb) => {
+  const prefix = extractPrefix(awb.trim().toUpperCase());
+  const carrier = AIRLINE_PREFIXES[prefix];
+  if (carrier) {
+    return { url: carrier.url(awb.trim().toUpperCase()), carrierName: carrier.name };
   }
+  // Fallback: use track-trace.com for any unknown airline
   return {
-    success: false,
-    message: "No active record found in the carrier system for this AWB."
+    url: `https://www.track-trace.com/aircargo?search=${awb.replace(/[\s-]/g, '')}`,
+    carrierName: 'Track-Trace (Universal)'
   };
+};
+
+/**
+ * Track a shipment by AWB number.
+ * 1. First checks local hardcoded data
+ * 2. Then calls the backend proxy API for real tracking
+ */
+export const trackShipment = async (awb) => {
+  const normalizedAwb = awb.trim().toUpperCase();
+
+  // 1. Check local data first (existing shipments)
+  if (SHIPMENT_DATA[normalizedAwb]) {
+    const carrierUrlInfo = getCarrierTrackingUrl(normalizedAwb);
+    return {
+      success: true,
+      source: 'local',
+      data: SHIPMENT_DATA[normalizedAwb],
+      carrierUrl: carrierUrlInfo.url,
+      carrierName: carrierUrlInfo.carrierName,
+    };
+  }
+
+  // 2. Call the backend proxy API for real tracking
+  try {
+    const response = await fetch(`/api/track/${encodeURIComponent(normalizedAwb)}`);
+    const result = await response.json();
+
+    // Attach carrier URL info
+    const carrierUrlInfo = getCarrierTrackingUrl(normalizedAwb);
+    result.carrierUrl = result.carrierUrl || carrierUrlInfo.url;
+    result.carrierName = result.carrierName || carrierUrlInfo.carrierName;
+
+    return result;
+  } catch (err) {
+    // Backend is down - still provide the carrier tracking URL
+    const carrierUrlInfo = getCarrierTrackingUrl(normalizedAwb);
+    return {
+      success: false,
+      source: 'offline',
+      message: `Backend proxy is offline. Track directly on the carrier website.`,
+      carrierUrl: carrierUrlInfo.url,
+      carrierName: carrierUrlInfo.carrierName,
+    };
+  }
 };
 
 export const getDashboardStats = () => {
