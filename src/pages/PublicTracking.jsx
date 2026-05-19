@@ -141,36 +141,27 @@ export default function PublicTracking() {
           </p>
         </div>
 
-        {/* Error Message with Carrier Redirect */}
+        {/* Live Data Iframe Fallback */}
         {error && (
-          <div className={`w-full max-w-2xl mb-8 p-5 rounded-2xl border animate-fade-in ${theme === 'dark' ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-100'}`}>
-            <div className="flex items-start gap-3">
-              <AlertCircle className={`w-5 h-5 shrink-0 mt-0.5 ${theme === 'dark' ? 'text-red-400' : 'text-red-500'}`} />
-              <div className="flex-1">
-                <p className={`text-sm font-medium mb-3 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>{error}</p>
-                
-                {/* Carrier redirect buttons */}
-                <div className="flex flex-wrap gap-2">
-                  {carrierUrl && (
-                    <button
-                      onClick={openCarrierWebsite}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all bg-blue-600 hover:bg-blue-700 text-white shadow-md"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      Track on {carrierName || 'Carrier Website'}
-                    </button>
-                  )}
-                  <button
-                    onClick={openFallbackTracker}
-                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                      theme === 'dark' ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
-                    }`}
-                  >
-                    <Globe className="w-4 h-4" />
-                    Track on Track-Trace.com
-                  </button>
-                </div>
+          <div className={`w-full rounded-3xl overflow-hidden border mb-8 animate-fade-in ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white border-gray-200 shadow-xl'}`}>
+            <div className={`p-4 border-b flex items-center justify-between ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'}`}>
+              <div className="flex items-center gap-2">
+                <Globe className={`w-5 h-5 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-500'}`} />
+                <h3 className="font-semibold">Live Global Tracking</h3>
               </div>
+              <span className={`text-xs px-2 py-1 rounded-full ${theme === 'dark' ? 'bg-white/10 text-gray-300' : 'bg-white border text-gray-600'}`}>
+                Connected via Track-Trace
+              </span>
+            </div>
+            <div className="w-full h-[600px] bg-white relative">
+              <iframe 
+                src={`https://www.track-trace.com/aircargo?search=${awb.replace(/[\s-]/g, '')}`}
+                width="100%" 
+                height="100%" 
+                frameBorder="0"
+                title="Live Carrier Tracking"
+                className="w-full h-full absolute inset-0"
+              />
             </div>
           </div>
         )}
