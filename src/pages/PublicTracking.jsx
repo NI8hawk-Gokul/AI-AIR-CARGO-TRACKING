@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Search, Package, Plane, CheckCircle, Clock, MapPin, FileText, AlertCircle, ExternalLink, Globe, Loader2, Download, Mail, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Package, Plane, CheckCircle, Clock, MapPin, FileText, AlertCircle, ExternalLink, Globe, Loader2, Download, Mail, Calendar, Zap } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { trackShipment, getCarrierTrackingUrl } from '../services/dataService';
+import { trackShipment, getCarrierTrackingUrl, getSearchHistory, runShipmentAIAnalysis } from '../services/dataService';
 import { generateShipmentPDF } from '../utils/pdfGenerator';
 import EmailModal from '../components/EmailModal';
 
@@ -23,11 +23,23 @@ export default function PublicTracking() {
   const [carrierUrl, setCarrierUrl] = useState(null);
   const [carrierName, setCarrierName] = useState(null);
   const [trackingSource, setTrackingSource] = useState(null);
+  const [historyList, setHistoryList] = useState([]);
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!awb.trim()) return;
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const list = await getSearchHistory();
+        setHistoryList(list);
+      } catch (err) {
+        console.error("Error loading history:", err);
+      }
+    };
+    fetchHistory();
+  }, [trackingData]);
+
+  const trackAwbValue = async (awbValue) => {
+    if (!awbValue.trim()) return;
     
     setIsSearching(true);
     setError(null);
@@ -37,15 +49,13 @@ export default function PublicTracking() {
     setTrackingSource(null);
     
     try {
-      const result = await trackShipment(awb);
+      const result = await trackShipment(awbValue);
       
-      // Always set carrier URL (for the "Track on Carrier" button)
       setCarrierUrl(result.carrierUrl || null);
       setCarrierName(result.carrierName || null);
       setTrackingSource(result.source || null);
 
       if (result.success) {
-        // Map icon strings to components
         const mappedData = {
           ...result.data,
           events: (result.data.events || []).map(event => ({
@@ -56,20 +66,23 @@ export default function PublicTracking() {
         setTrackingData(mappedData);
       } else {
         setError(result.message);
-        // Even on failure, we may have partial carrier data
         if (result.data) {
           setTrackingData(result.data);
         }
       }
     } catch (err) {
       setError("An error occurred while connecting to the tracking system. Please try again.");
-      // Still provide carrier URL as fallback
-      const fallback = getCarrierTrackingUrl(awb);
+      const fallback = getCarrierTrackingUrl(awbValue);
       setCarrierUrl(fallback.url);
       setCarrierName(fallback.carrierName);
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    trackAwbValue(awb);
   };
 
   const openCarrierWebsite = () => {
@@ -263,6 +276,48 @@ export default function PublicTracking() {
               </div>
             </div>
 
+            {/* AI Prediction Section */}
+            {trackingData.status !== 'Delivered' && trackingData.status !== 'Arrived' && (
+              <div className={`w-full rounded-3xl p-6 mb-8 border flex flex-col md:flex-row items-center justify-between gap-4 ${
+                theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-lg shadow-gray-200/50'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <Zap className="w-6 h-6 text-blue-500 animate-pulse" />
+                  <div>
+                    <h3 className="font-bold text-sm">AI Delay Prediction</h3>
+                    {trackingData.aiAnalysisRun ? (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 m-0">
+                        Risk Level: <strong style={{ color: trackingData.delayRisk === 'None' ? '#10b981' : '#f59e0b' }}>{trackingData.delayRisk}</strong> • {trackingData.delayReason}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 m-0">
+                        Predict potential transit delays using air traffic and meteorological models.
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {!trackingData.aiAnalysisRun ? (
+                  <button
+                    onClick={async () => {
+                      const updated = await runShipmentAIAnalysis(trackingData.awb);
+                      setTrackingData(prev => ({
+                        ...prev,
+                        ...updated
+                      }));
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    Run AI Analysis
+                  </button>
+                ) : (
+                  <div className="text-xs font-semibold text-emerald-500 bg-emerald-500/10 px-3 py-1 rounded-full">
+                    Analysis Completed
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Timeline */}
             {(trackingData.flightSegments || (trackingData.events && trackingData.events.length > 0)) && (
             <div className={`w-full rounded-3xl p-8 mb-8 border ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-xl shadow-gray-200/50'}`}>
@@ -404,6 +459,42 @@ export default function PublicTracking() {
                   Track-Trace.com
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Search History */}
+        {!trackingData && !isSearching && historyList.length > 0 && (
+          <div className="w-full max-w-2xl mb-8 animate-fade-in">
+            <h2 className={`text-lg font-bold mb-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Recent Searches</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {historyList.map((item, idx) => (
+                <div 
+                  key={idx}
+                  onClick={() => {
+                    setAwb(item.awb);
+                    trackAwbValue(item.awb);
+                  }}
+                  className={`p-4 rounded-2xl border text-left cursor-pointer transition-all hover:scale-[1.02] ${
+                    theme === 'dark' 
+                      ? 'bg-white/5 border-white/10 hover:bg-white/10' 
+                      : 'bg-white border-gray-100 hover:shadow-md'
+                  }`}
+                  style={{ borderLeftWidth: '4px', borderLeftColor: item.status === 'Delivered' || item.status === 'Arrived' ? '#10b981' : '#f59e0b' }}
+                >
+                  <div className="flex justify-between items-center mb-2">
+                    <strong className="text-blue-500">{item.awb}</strong>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      item.status === 'Delivered' || item.status === 'Arrived'
+                        ? 'bg-emerald-500/10 text-emerald-500' 
+                        : 'bg-amber-500/10 text-amber-500'
+                    }`}>
+                      {item.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 m-0">Carrier: {item.carrier}</p>
+                </div>
+              ))}
             </div>
           </div>
         )}

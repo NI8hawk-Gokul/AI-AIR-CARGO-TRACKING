@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
 import Card from '../components/Card';
-import { getDashboardStats, getRecentShipments } from '../services/dataService';
+import { Link } from 'react-router-dom';
+import { getDashboardStats, getRecentShipments, getAIDelayPredictions } from '../services/dataService';
 
 const StatCard = ({ title, value, icon, color }) => (
   <Card style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', borderLeft: `4px solid ${color}` }}>
@@ -22,11 +23,24 @@ const StatCard = ({ title, value, icon, color }) => (
 const Dashboard = () => {
   const [stats, setStats] = useState({ totalCargo: 0, pending: 0, delayed: 0, deliveredToday: 0 });
   const [recentShipments, setRecentShipments] = useState([]);
+  const [predictions, setPredictions] = useState([]);
 
   useEffect(() => {
-    // Fetch real-time stats and recent shipments
-    setStats(getDashboardStats());
-    setRecentShipments(getRecentShipments(5));
+    const fetchDashboardData = async () => {
+      try {
+        const [statsData, shipmentsData, predictionsData] = await Promise.all([
+          getDashboardStats(),
+          getRecentShipments(5),
+          getAIDelayPredictions()
+        ]);
+        setStats(statsData);
+        setRecentShipments(shipmentsData);
+        setPredictions(predictionsData);
+      } catch (err) {
+        console.error("Error loading dashboard data:", err);
+      }
+    };
+    fetchDashboardData();
   }, []);
 
   return (
@@ -57,7 +71,11 @@ const Dashboard = () => {
               <tbody>
                 {recentShipments.map((row, i) => (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '1rem 0.5rem', fontWeight: '500' }}>{row.awb}</td>
+                    <td style={{ padding: '1rem 0.5rem', fontWeight: '500' }}>
+                      <Link to={`/tracking?awb=${row.awb}`} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontWeight: 'bold' }}>
+                        {row.awb}
+                      </Link>
+                    </td>
                     <td style={{ padding: '1rem 0.5rem', color: 'var(--text-secondary)' }}>{row.route}</td>
                     <td style={{ padding: '1rem 0.5rem' }}>
                       <span style={{ 
@@ -76,22 +94,26 @@ const Dashboard = () => {
 
         <Card title="AI Delay Predictions (Live)">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {[
-              { flight: 'EK502', prob: '85%', reason: 'Heavy rain at DEL' },
-              { flight: 'BA119', prob: '60%', reason: 'Air traffic congestion' },
-              { flight: 'NH10', prob: '15%', reason: 'Clear weather, on schedule' },
-            ].map((alert, i) => (
-              <div key={i} style={{ 
-                padding: '1rem', backgroundColor: `${alert.prob.replace('%', '') > 50 ? 'var(--status-delayed)' : 'var(--status-arrived)'}10`, 
-                borderLeft: `4px solid ${alert.prob.replace('%', '') > 50 ? 'var(--status-delayed)' : 'var(--status-arrived)'}`, borderRadius: '0 8px 8px 0'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                  <strong>Flight {alert.flight}</strong>
-                  <span style={{ color: alert.prob.replace('%', '') > 50 ? 'var(--status-delayed)' : 'var(--status-arrived)', fontWeight: 'bold' }}>{alert.prob} Risk</span>
+            {predictions.length > 0 ? (
+              predictions.map((alert, i) => (
+                <div key={i} style={{ 
+                  padding: '1rem', backgroundColor: `${alert.prob.replace('%', '') > 50 ? 'var(--status-delayed)' : 'var(--status-arrived)'}10`, 
+                  borderLeft: `4px solid ${alert.prob.replace('%', '') > 50 ? 'var(--status-delayed)' : 'var(--status-arrived)'}`, borderRadius: '0 8px 8px 0'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <strong>Flight {alert.flight} <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>({alert.awb})</span></strong>
+                    <span style={{ color: alert.prob.replace('%', '') > 50 ? 'var(--status-delayed)' : 'var(--status-arrived)', fontWeight: 'bold' }}>{alert.prob} Risk</span>
+                  </div>
+                  <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>Reason: {alert.reason}</p>
                 </div>
-                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>Reason: {alert.reason}</p>
+              ))
+            ) : (
+              <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <CheckCircle size={36} color="var(--status-arrived)" style={{ margin: '0 auto 0.75rem auto', display: 'block' }} />
+                <p style={{ margin: 0, fontWeight: '500' }}>No active transit risks detected</p>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem' }}>All shipments have been delivered successfully.</p>
               </div>
-            ))}
+            )}
           </div>
         </Card>
       </div>

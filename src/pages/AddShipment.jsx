@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import Card from '../components/Card';
 import { Send, UploadCloud, FileText, CheckCircle, Loader2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { addCustomShipment } from '../services/dataService';
 
 const AddShipment = () => {
   const { theme } = useTheme();
@@ -13,7 +14,8 @@ const AddShipment = () => {
     destination: '',
     weight: '',
     flight: '',
-    date: ''
+    date: '',
+    status: 'In Transit'
   });
 
   const [isParsing, setIsParsing] = useState(false);
@@ -21,9 +23,23 @@ const AddShipment = () => {
 
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    alert('Shipment added successfully!');
+    const success = await addCustomShipment(formData);
+    if (success) {
+      alert('Shipment added successfully!');
+      setFormData({
+        awb: '',
+        origin: '',
+        destination: '',
+        weight: '',
+        flight: '',
+        date: '',
+        status: 'In Transit'
+      });
+    } else {
+      alert('Failed to add shipment.');
+    }
   };
 
   const handleFileUpload = (e) => {
@@ -41,7 +57,8 @@ const AddShipment = () => {
         destination: 'LHR',
         weight: '1500',
         flight: 'BA112',
-        date: new Date().toISOString().split('T')[0]
+        date: new Date().toISOString().split('T')[0],
+        status: 'In Transit'
       });
       setIsParsing(false);
       setParseSuccess(true);
@@ -127,6 +144,29 @@ const AddShipment = () => {
             <div>
               <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Departure Date</label>
               <input type="date" name="date" value={formData.date} className="input-field" onChange={handleChange} />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>Shipment Status</label>
+              <select 
+                name="status" 
+                value={formData.status || 'In Transit'} 
+                className="input-field" 
+                onChange={handleChange}
+                style={{ 
+                  width: '100%', 
+                  height: '45px', 
+                  borderRadius: '8px', 
+                  border: '1px solid var(--border-color)', 
+                  backgroundColor: 'var(--bg-card)', 
+                  padding: '0 1rem',
+                  color: 'inherit'
+                }}
+              >
+                <option value="In Transit">In Transit</option>
+                <option value="Pending">Pending</option>
+                <option value="Delayed">Delayed</option>
+                <option value="Delivered">Delivered</option>
+              </select>
             </div>
           </div>
 

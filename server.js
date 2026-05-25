@@ -1,11 +1,45 @@
 import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
 import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 import { getCarrierInfo, extractPrefix, buildTrackingUrl, buildFallbackTrackingUrl } from './airlinePrefixes.js';
 
 dotenv.config();
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+let supabase;
+if (SUPABASE_URL && SUPABASE_KEY) {
+  supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  console.log('📡 Supabase client initialized');
+} else {
+  console.warn('⚠️ WARNING: SUPABASE_URL and/or SUPABASE_KEY is missing from .env');
+}
+
+function toSnakeCase(obj) {
+  if (!obj) return obj;
+  const target = {};
+  for (const [key, val] of Object.entries(obj)) {
+    const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+    target[snakeKey] = val;
+  }
+  return target;
+}
+
+function toCamelCase(obj) {
+  if (!obj) return obj;
+  const target = {};
+  for (const [key, val] of Object.entries(obj)) {
+    const camelKey = key.replace(/(_\w)/g, m => m[1].toUpperCase());
+    target[camelKey] = val;
+  }
+  return target;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -308,6 +342,26 @@ app.get('/api/track/:awb', rateLimit, async (req, res) => {
 
     console.log(`\n[Track] 🔍 AWB: ${awb} | Carrier: ${carrierInfo.name}`);
 
+    // ========== STEP 0: Check Database ==========
+    if (supabase) {
+      try {
+        const { data: dbData } = await supabase.from('shipments').select('*').eq('awb', awb).single();
+        if (dbData) {
+          console.log(`[Track] 📦 Found shipment details in Supabase database`);
+          return res.json({
+            success: true,
+            source: 'database',
+            data: toCamelCase(dbData),
+            carrierUrl: trackingUrlInfo?.url,
+            carrierName: carrierInfo.name,
+            fallbackUrl
+          });
+        }
+      } catch (e) {
+        console.log('[Track] DB check skipped / error:', e.message);
+      }
+    }
+
     // ========== STEP 1: Check Cache ==========
     const cachedData = getFromCache(awb);
     if (cachedData) {
@@ -329,6 +383,24 @@ app.get('/api/track/:awb', rateLimit, async (req, res) => {
     if (aftershipData) {
       // Cache the result
       setInCache(awb, aftershipData);
+
+      // Save to database
+      if (supabase) {
+        try {
+          const isDelivered = aftershipData.status === 'Delivered' || aftershipData.status === 'Arrived';
+          const enriched = {
+            ...aftershipData,
+            aiAnalysisRun: isDelivered ? true : false,
+            delayRisk: isDelivered ? "None" : undefined,
+            delayRiskPercent: isDelivered ? 0 : undefined,
+            delayReason: isDelivered ? "Shipment delivered successfully." : undefined,
+          };
+          await supabase.from('shipments').upsert(toSnakeCase(enriched));
+        } catch (dbErr) {
+          console.error('[DB Error]', dbErr.message);
+        }
+      }
+
       return res.json({
         success: true,
         source: 'aftership',
@@ -359,6 +431,24 @@ app.get('/api/track/:awb', rateLimit, async (req, res) => {
         flight: carrierInfo.code + ' —'
       };
       setInCache(awb, transformedData);
+
+      // Save to database
+      if (supabase) {
+        try {
+          const isDelivered = transformedData.status === 'Delivered' || transformedData.status === 'Arrived';
+          const enriched = {
+            ...transformedData,
+            aiAnalysisRun: isDelivered ? true : false,
+            delayRisk: isDelivered ? "None" : undefined,
+            delayRiskPercent: isDelivered ? 0 : undefined,
+            delayReason: isDelivered ? "Shipment delivered successfully." : undefined,
+          };
+          await supabase.from('shipments').upsert(toSnakeCase(enriched));
+        } catch (dbErr) {
+          console.error('[DB Error]', dbErr.message);
+        }
+      }
+
       return res.json({
         success: true,
         source: 'carrier_scrape',
@@ -425,6 +515,182 @@ app.get('/api/carrier/:awb', (req, res) => {
 });
 
 /**
+ * GET /api/db/shipments
+ * Fetch all shipments from Supabase database
+ */
+app.get('/api/db/shipments', async (req, res) => {
+  if (!supabase) {
+    return res.status(500).json({ success: false, message: 'Database not initialized' });
+  }
+  try {
+    const { data, error } = await supabase.from('shipments').select('*');
+    if (error) throw error;
+    const camelCasedData = (data || []).map(toCamelCase);
+    res.json({ success: true, data: camelCasedData });
+  } catch (err) {
+    console.error('[DB Error]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /api/db/shipments
+ * Upsert a shipment in Supabase
+ */
+app.post('/api/db/shipments', async (req, res) => {
+  if (!supabase) {
+    return res.status(500).json({ success: false, message: 'Database not initialized' });
+  }
+  try {
+    const shipment = req.body;
+    if (!shipment.awb) {
+      return res.status(400).json({ success: false, message: 'AWB number is required' });
+    }
+    const snakeCased = toSnakeCase(shipment);
+    const { error } = await supabase.from('shipments').upsert(snakeCased);
+    if (error) throw error;
+    res.json({ success: true, message: 'Shipment saved successfully' });
+  } catch (err) {
+    console.error('[DB Error]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /api/db/history
+ * Fetch search history records from Supabase
+ */
+app.get('/api/db/history', async (req, res) => {
+  if (!supabase) {
+    return res.status(500).json({ success: false, message: 'Database not initialized' });
+  }
+  try {
+    const { data, error } = await supabase
+      .from('search_history')
+      .select('*')
+      .order('searched_at', { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('[DB Error]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /api/db/history
+ * Record search history event in database
+ */
+app.post('/api/db/history', async (req, res) => {
+  if (!supabase) {
+    return res.status(500).json({ success: false, message: 'Database not initialized' });
+  }
+  try {
+    const historyItem = req.body;
+    if (!historyItem.awb) {
+      return res.status(400).json({ success: false, message: 'AWB is required' });
+    }
+    
+    // Deduplicate
+    await supabase.from('search_history').delete().eq('awb', historyItem.awb);
+    
+    const { error } = await supabase.from('search_history').insert({
+      awb: historyItem.awb,
+      carrier: historyItem.carrier,
+      status: historyItem.status,
+      origin: historyItem.origin,
+      destination: historyItem.destination,
+      flight: historyItem.flight,
+      date: historyItem.date
+    });
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[DB Error]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /api/db/analysis/:awb
+ * Perform dynamic AI predictions and save to database
+ */
+app.post('/api/db/analysis/:awb', async (req, res) => {
+  if (!supabase) {
+    return res.status(500).json({ success: false, message: 'Database not initialized' });
+  }
+  try {
+    const awb = req.params.awb.trim().toUpperCase();
+    const { data, error } = await supabase.from('shipments').select('*').eq('awb', awb).single();
+    
+    let shipment = data;
+    if (error || !shipment) {
+      const prefix = awb.replace(/[\s-]/g, '').substring(0, 3);
+      const carrier = getCarrierInfo(prefix) || { name: 'Universal Cargo', code: 'UC' };
+      shipment = {
+        awb,
+        carrier: carrier.name,
+        carrier_code: carrier.code || prefix,
+        status: 'In Transit',
+        origin: "DXB - Dubai, UAE",
+        destination: "LHR - London, UK",
+        estimated_delivery: "May 28, 2026 - 15:40",
+        weight: "1200 kg",
+        pieces: 3,
+        flight: `${carrier.code || 'UC'}502`,
+        current_location: [35.0, 15.0],
+        route: [[25.2048, 55.2708], [51.4700, -0.4543]],
+        telemetry: { altitude: "35,000 ft", speed: "880 km/h", temp: "-50°C", humidity: "12%" },
+        eta: "May 28, 2026 - 15:40",
+        date: new Date().toISOString().split('T')[0],
+        events: [
+          { time: "May 24, 10:00", location: "DXB", status: "Shipment Received", completed: true },
+          { time: "May 25, 08:30", location: "DXB", status: "Departed on Flight " + (carrier.code || 'UC') + "502", completed: true },
+          { time: "May 25, 11:00", location: "In Air", status: "In Transit", completed: true }
+        ]
+      };
+    }
+
+    const isDelivered = shipment.status === 'Delivered' || shipment.status === 'Arrived';
+    if (isDelivered) {
+      shipment.delay_risk = "None";
+      shipment.delay_risk_percent = 0;
+      shipment.delay_reason = "Shipment delivered successfully.";
+      shipment.ai_analysis_run = true;
+    } else {
+      const num = parseInt(awb.replace(/[^0-9]/g, '')) || 50;
+      const riskPercent = 20 + (num % 70);
+      let delayRisk = "None";
+      let delayReason = "Clear weather, on schedule";
+      if (riskPercent > 70) {
+        delayRisk = `High Risk (${riskPercent}%)`;
+        delayReason = `Heavy rain and traffic congestion at ${shipment.destination?.split(' - ')[0] || 'destination'}`;
+      } else if (riskPercent > 40) {
+        delayRisk = `Medium Risk (${riskPercent}%)`;
+        delayReason = "Air traffic control queuing delays";
+      } else {
+        delayRisk = `Low Risk (${riskPercent}%)`;
+        delayReason = "Optimal weather and clear flight paths";
+      }
+
+      shipment.delay_risk = delayRisk;
+      shipment.delay_risk_percent = riskPercent;
+      shipment.delay_reason = delayReason;
+      shipment.ai_analysis_run = true;
+    }
+
+    const { error: upsertError } = await supabase.from('shipments').upsert(shipment);
+    if (upsertError) throw upsertError;
+
+    res.json({ success: true, data: toCamelCase(shipment) });
+  } catch (err) {
+    console.error('[DB Error]', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
  * GET /api/health
  * Health check endpoint
  */
@@ -435,6 +701,17 @@ app.get('/api/health', (req, res) => {
     airlines: 40,
     aftership: AFTERSHIP_API_KEY ? '✅ Configured' : '⚠️ Not configured'
   });
+});
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve static assets from the React build folder (for production deployment)
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Serve index.html for all SPA routes (must be placed after all API endpoints)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Start server

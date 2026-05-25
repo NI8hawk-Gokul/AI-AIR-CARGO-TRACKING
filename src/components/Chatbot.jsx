@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Paperclip, Bot, User, Sparkles } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { trackShipment } from '../services/dataService';
+import { trackShipment, getAIDelayPredictions, runShipmentAIAnalysis } from '../services/dataService';
 
 export default function Chatbot() {
   const { theme } = useTheme();
@@ -44,7 +44,12 @@ export default function Chatbot() {
         const result = await trackShipment(foundAwb);
         let aiResponse = '';
         if (result.success) {
-          const d = result.data;
+          let d = result.data;
+          
+          if (d.status !== 'Delivered' && d.status !== 'Arrived' && !d.aiAnalysisRun) {
+            d = await runShipmentAIAnalysis(d.awb);
+          }
+
           const lastEvent = d.events[d.events.length - 1];
           aiResponse = `**Real-Time Data for ${d.awb}:**
           
@@ -53,6 +58,10 @@ export default function Chatbot() {
 • **Route:** ${d.origin} ➔ ${d.destination}
 • **Weight/Pieces:** ${d.weight} / ${d.pieces}
 • **Latest Update:** ${lastEvent.status} at ${lastEvent.location} (${lastEvent.time})`;
+
+          if (d.status !== 'Delivered' && d.status !== 'Arrived' && d.delayRisk && d.delayRisk !== 'None') {
+            aiResponse += `\n• **AI Delay Prediction:** ${d.delayRisk} (Reason: ${d.delayReason || 'N/A'})`;
+          }
         } else {
           aiResponse = `I searched the carrier databases for **${foundAwb}**, but no active record was found. It might be an older shipment that has been archived, or the number might be incorrect.`;
         }
@@ -61,10 +70,16 @@ export default function Chatbot() {
         setMessages(prev => [...prev, { id: Date.now(), type: 'ai', text: "I'm having trouble connecting to the tracking servers right now. Please try again in a moment." }]);
       }
     } else {
-      setTimeout(() => {
+      setTimeout(async () => {
         let aiResponse = '';
         if (lowercaseInput.includes('delay') || lowercaseInput.includes('status')) {
-          aiResponse = "Currently, flight **EK502** is showing a 45-minute delay. All other shipments are operating normally.";
+          const activePredictions = await getAIDelayPredictions();
+          if (activePredictions.length > 0) {
+            const delayDetails = activePredictions.map(p => `• **Flight ${p.flight}** (${p.awb}) has a **${p.prob} delay risk** (Reason: ${p.reason})`).join('\n');
+            aiResponse = `Currently, the following active flights are flagged with delay risks:\n\n${delayDetails}`;
+          } else {
+            aiResponse = "Currently, all shipments are operating normally with no active delay risks predicted.";
+          }
         } else if (lowercaseInput.includes('client') || lowercaseInput.includes('who')) {
           aiResponse = "I can fetch client details for any shipment. Please provide the AWB number.";
         } else {

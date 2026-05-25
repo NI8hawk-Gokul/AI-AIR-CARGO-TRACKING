@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Card from '../components/Card';
 import { Download, Filter, Search, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { getReportData, exportToCSV } from '../services/dataService';
 
 const Reports = () => {
@@ -9,7 +10,15 @@ const Reports = () => {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   useEffect(() => {
-    setReportData(getReportData(filters));
+    const fetchReports = async () => {
+      try {
+        const data = await getReportData(filters);
+        setReportData(data);
+      } catch (err) {
+        console.error("Error loading reports data:", err);
+      }
+    };
+    fetchReports();
   }, [filters]);
 
   const handleExport = () => {
@@ -103,7 +112,11 @@ const Reports = () => {
                 return (
                   <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s' }}>
                     <td style={{ padding: '1rem' }}>{row.date}</td>
-                    <td style={{ padding: '1rem', fontWeight: '500' }}>{row.awb}</td>
+                    <td style={{ padding: '1rem', fontWeight: '500' }}>
+                      <Link to={`/tracking?awb=${row.awb}`} style={{ color: 'var(--primary-color)', textDecoration: 'none', fontWeight: 'bold' }}>
+                        {row.awb}
+                      </Link>
+                    </td>
                     <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{row.origin} → {row.dest}</td>
                     <td style={{ padding: '1rem' }}>
                       <span style={{ 
