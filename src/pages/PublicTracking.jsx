@@ -167,7 +167,7 @@ export default function PublicTracking() {
         )}
 
         {/* Tracking Results */}
-        {trackingData && trackingData.events && (
+        {trackingData && (
           <div className="w-full animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
 
             {/* Source Badge */}
@@ -264,6 +264,7 @@ export default function PublicTracking() {
             </div>
 
             {/* Timeline */}
+            {(trackingData.flightSegments || (trackingData.events && trackingData.events.length > 0)) && (
             <div className={`w-full rounded-3xl p-8 mb-8 border ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-xl shadow-gray-200/50'}`}>
               
               {/* Horizontal Flight Segments Visual */}
@@ -331,7 +332,7 @@ export default function PublicTracking() {
                 {/* Vertical Line */}
                 <div style={{ position: 'absolute', left: '9px', top: '30px', bottom: '30px', width: '2px', borderLeft: '2px dashed var(--border-color)' }}></div>
                 
-                {trackingData.events.map((event, idx) => {
+                {trackingData.events && trackingData.events.map((event, idx) => {
                   const isDelivered = event.status && event.status.toLowerCase().includes('delivered');
                   const isFirst = idx === 0;
                   
@@ -371,6 +372,7 @@ export default function PublicTracking() {
                 })}
               </div>
             </div>
+            )}
 
             {/* Bottom Action Bar */}
             <div className={`w-full rounded-2xl p-5 border flex flex-col sm:flex-row items-center justify-between gap-4 ${

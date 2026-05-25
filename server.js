@@ -2,13 +2,28 @@ import express from 'express';
 import cors from 'cors';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import dotenv from 'dotenv';
 import { getCarrierInfo, extractPrefix, buildTrackingUrl, buildFallbackTrackingUrl } from './airlinePrefixes.js';
 
+dotenv.config();
+
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// ==========================================
+// AfterShip Configuration
+// ==========================================
+const AFTERSHIP_API_KEY = process.env.AFTERSHIP_API_KEY;
+const AFTERSHIP_BASE_URL = 'https://api.aftership.com/v4/trackings';
+const CACHE_TTL = parseInt(process.env.CACHE_TTL || '3600000'); // 1 hour
+const trackingCache = new Map();
+
+if (!AFTERSHIP_API_KEY) {
+  console.warn('⚠️  WARNING: AFTERSHIP_API_KEY not set in .env - AfterShip tracking will be skipped');
+}
 
 // Rate limiting - simple in-memory store
 const requestLog = new Map();
@@ -26,6 +41,121 @@ function rateLimit(req, res, next) {
   recent.push(now);
   requestLog.set(ip, recent);
   next();
+}
+
+// ==========================================
+// AfterShip Helper Functions
+// ==========================================
+
+/**
+ * Get from cache with TTL check
+ */
+function getFromCache(awb) {
+  const key = `tracking_${awb.toUpperCase().replace(/[- ]/g, '')}`;
+  const cached = trackingCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data;
+  }
+  trackingCache.delete(key);
+  return null;
+}
+
+/**
+ * Store in cache with timestamp
+ */
+function setInCache(awb, data) {
+  const key = `tracking_${awb.toUpperCase().replace(/[- ]/g, '')}`;
+  trackingCache.set(key, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
+/**
+ * Map AfterShip tag to our status format
+ */
+function mapAftershipStatus(tag) {
+  const statusMap = {
+    'Pending': 'Pending',
+    'InfoReceived': 'Pending',
+    'InTransit': 'In Transit',
+    'OutForDelivery': 'Out for Delivery',
+    'AttemptFail': 'Delivery Attempted',
+    'Delivered': 'Delivered',
+    'Exception': 'Exception',
+    'Expired': 'Expired',
+    'Returned': 'Returned'
+  };
+  return statusMap[tag] || tag || 'Unknown';
+}
+
+/**
+ * Query AfterShip API for tracking data
+ */
+async function queryAfterShip(awb) {
+  if (!AFTERSHIP_API_KEY) {
+    console.log('[AfterShip] API key not configured - skipping');
+    return null;
+  }
+
+  try {
+    const cleanAwb = awb.replace(/[- ]/g, '');
+    console.log(`[AfterShip] Querying for AWB: ${cleanAwb}`);
+
+    const response = await axios.post(AFTERSHIP_BASE_URL, {
+      tracking: {
+        tracking_number: cleanAwb,
+        slug: 'auto'
+      }
+    }, {
+      headers: {
+        'aftership-api-key': AFTERSHIP_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      timeout: parseInt(process.env.AFTERSHIP_TIMEOUT || '15000')
+    });
+
+    const tracking = response.data.data.tracking;
+    console.log(`[AfterShip] ✅ Found tracking data | Status: ${tracking.tag} | Events: ${tracking.checkpoints?.length || 0}`);
+
+    // Transform AfterShip format to our format
+    const events = (tracking.checkpoints || []).map((cp, idx) => ({
+      time: cp.checkpoint_time ? new Date(cp.checkpoint_time).toLocaleString() : 'N/A',
+      location: cp.location || '',
+      status: cp.message || 'Status update',
+      details: cp.country_name || '',
+      type: idx === 0 ? 'package' : (idx === tracking.checkpoints.length - 1 ? 'check-circle' : 'plane'),
+      completed: true
+    }));
+
+    const lastCheckpoint = tracking.checkpoints?.[0] || {};
+    const transformedData = {
+      awb: tracking.tracking_number,
+      carrier: tracking.carrier_name || 'Unknown Carrier',
+      carrierCode: tracking.slug.toUpperCase(),
+      status: mapAftershipStatus(tracking.tag),
+      origin: 'See tracking events',
+      destination: lastCheckpoint.location || 'In transit',
+      events: events,
+      weight: 'N/A',
+      pieces: 'N/A',
+      estimatedDelivery: tracking.expected_delivery ? new Date(tracking.expected_delivery).toLocaleString() : 'N/A',
+      flight: 'N/A'
+    };
+
+    return transformedData;
+  } catch (err) {
+    if (err.response?.status === 404) {
+      console.log(`[AfterShip] ⚠️  AWB not found: ${awb}`);
+    } else if (err.response?.status === 401) {
+      console.error('[AfterShip] ❌ Invalid API key - check .env file');
+    } else if (err.code === 'ECONNABORTED') {
+      console.log('[AfterShip] ⏱️  Request timeout');
+    } else {
+      console.log(`[AfterShip] Error: ${err.message}`);
+    }
+    return null;
+  }
 }
 
 /**
@@ -145,8 +275,11 @@ async function scrapeCarrierPage(carrierInfo, awb) {
 
 /**
  * GET /api/track/:awb
- * Main tracking endpoint. Attempts to scrape real tracking data.
- * Always returns carrier info and direct tracking URL regardless of scrape success.
+ * Main tracking endpoint with fallback chain:
+ * 1. Check cache
+ * 2. Query AfterShip API (real-time data)
+ * 3. Fallback to web scraping
+ * 4. Return carrier URL redirect
  */
 app.get('/api/track/:awb', rateLimit, async (req, res) => {
   try {
@@ -173,37 +306,71 @@ app.get('/api/track/:awb', rateLimit, async (req, res) => {
       });
     }
 
-    console.log(`[Track] AWB: ${awb} | Carrier: ${carrierInfo.name} | Attempting scrape...`);
+    console.log(`\n[Track] 🔍 AWB: ${awb} | Carrier: ${carrierInfo.name}`);
 
-    // Try scraping the carrier's tracking page
-    const scrapedData = await scrapeCarrierPage(carrierInfo, awb);
-
-    if (scrapedData && scrapedData.events.length > 0) {
-      console.log(`[Track] ✅ Scraped ${scrapedData.events.length} events from ${carrierInfo.name}`);
+    // ========== STEP 1: Check Cache ==========
+    const cachedData = getFromCache(awb);
+    if (cachedData) {
+      console.log(`[Track] ⚡ Returning cached data (${Math.round((CACHE_TTL / 60000))} min cache)`);
       return res.json({
         success: true,
-        source: 'carrier_scrape',
-        data: {
-          awb,
-          carrier: carrierInfo.name,
-          carrierCode: carrierInfo.code,
-          status: scrapedData.status,
-          origin: scrapedData.origin,
-          destination: scrapedData.destination,
-          events: scrapedData.events,
-          weight: 'See carrier website',
-          pieces: '-',
-          estimatedDelivery: 'See carrier website',
-          flight: carrierInfo.code + ' —',
-        },
+        source: 'cache',
+        data: cachedData,
         carrierUrl: trackingUrlInfo?.url,
         carrierName: carrierInfo.name,
         fallbackUrl
       });
     }
 
-    // Scraping failed - return carrier info with tracking URLs
-    console.log(`[Track] ⚠️ Could not scrape ${carrierInfo.name}. Returning carrier redirect.`);
+    // ========== STEP 2: Try AfterShip API ==========
+    console.log('[Track] 📡 Attempting AfterShip API...');
+    const aftershipData = await queryAfterShip(awb);
+
+    if (aftershipData) {
+      // Cache the result
+      setInCache(awb, aftershipData);
+      return res.json({
+        success: true,
+        source: 'aftership',
+        data: aftershipData,
+        carrierUrl: trackingUrlInfo?.url,
+        carrierName: aftershipData.carrier,
+        fallbackUrl
+      });
+    }
+
+    // ========== STEP 3: Fallback to Web Scraper ==========
+    console.log('[Track] 🔄 AfterShip failed, attempting web scraper...');
+    const scrapedData = await scrapeCarrierPage(carrierInfo, awb);
+
+    if (scrapedData && scrapedData.events.length > 0) {
+      console.log(`[Track] ✅ Scraped ${scrapedData.events.length} events from carrier`);
+      const transformedData = {
+        awb,
+        carrier: carrierInfo.name,
+        carrierCode: carrierInfo.code,
+        status: scrapedData.status,
+        origin: scrapedData.origin,
+        destination: scrapedData.destination,
+        events: scrapedData.events,
+        weight: 'See carrier website',
+        pieces: '-',
+        estimatedDelivery: 'See carrier website',
+        flight: carrierInfo.code + ' —'
+      };
+      setInCache(awb, transformedData);
+      return res.json({
+        success: true,
+        source: 'carrier_scrape',
+        data: transformedData,
+        carrierUrl: trackingUrlInfo?.url,
+        carrierName: carrierInfo.name,
+        fallbackUrl
+      });
+    }
+
+    // ========== STEP 4: Return Carrier URL Redirect ==========
+    console.log(`[Track] ⚠️  All sources failed. Redirecting to carrier website.`);
     return res.json({
       success: false,
       source: 'redirect',
@@ -216,10 +383,15 @@ app.get('/api/track/:awb', rateLimit, async (req, res) => {
         carrier: carrierInfo.name,
         carrierCode: carrierInfo.code,
         status: 'Check Carrier Website',
+        origin: 'N/A',
+        destination: 'N/A',
+        weight: 'N/A',
+        pieces: 'N/A',
+        estimatedDelivery: 'Check Carrier Website'
       }
     });
   } catch (err) {
-    console.error('[Track] Error:', err.message);
+    console.error('[Track] ❌ Error:', err.message);
     res.status(500).json({
       success: false,
       message: 'Internal server error while tracking shipment.',
@@ -257,18 +429,29 @@ app.get('/api/carrier/:awb', (req, res) => {
  * Health check endpoint
  */
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), airlines: 40 });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    airlines: 40,
+    aftership: AFTERSHIP_API_KEY ? '✅ Configured' : '⚠️ Not configured'
+  });
 });
 
 // Start server
 app.listen(PORT, () => {
   console.log('');
-  console.log('  ╔══════════════════════════════════════════════╗');
-  console.log('  ║   🛫  AeroTrack Proxy Server Running        ║');
-  console.log(`  ║   📡  http://localhost:${PORT}                  ║`);
-  console.log('  ║   🔗  /api/track/:awb  → Track shipment     ║');
-  console.log('  ║   📋  /api/carrier/:awb → Carrier lookup     ║');
-  console.log('  ║   💚  /api/health       → Health check       ║');
-  console.log('  ╚══════════════════════════════════════════════╝');
+  console.log('  ╔════════════════════════════════════════════════════════╗');
+  console.log('  ║         🛫 AeroTrack Proxy Server Running             ║');
+  console.log(`  ║         📡 http://localhost:${PORT}                       ║`);
+  console.log('  ║                                                        ║');
+  console.log('  ║   API Endpoints:                                       ║');
+  console.log('  ║   🔗 /api/track/:awb     → Track shipment (with cache) ║');
+  console.log('  ║   📋 /api/carrier/:awb   → Carrier lookup              ║');
+  console.log('  ║   💚 /api/health         → Health check                ║');
+  console.log('  ║                                                        ║');
+  console.log(`  ║   🌐 AfterShip: ${AFTERSHIP_API_KEY ? '✅ ENABLED' : '⚠️ DISABLED (set AFTERSHIP_API_KEY)'}                        ║`);
+  console.log('  ║   🔄 Cache TTL: 1 hour                                 ║');
+  console.log('  ║   📊 Fallback: Web Scraping + Carrier Redirect        ║');
+  console.log('  ╚════════════════════════════════════════════════════════╝');
   console.log('');
 });

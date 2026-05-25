@@ -55,14 +55,14 @@ export const SHIPMENT_DATA = {
   "205-68108736": {
     awb: "205-68108736",
     carrier: "ANA Cargo",
-    status: "In Transit",
+    status: "Delivered",
     origin: "NRT - Tokyo, Japan",
     destination: "JFK - New York, USA",
     estimatedDelivery: "May 15, 2026 - 09:15",
     weight: "850 kg",
     pieces: 2,
     flight: "NH10",
-    currentLocation: [40.6413, -100.7781],
+    currentLocation: [40.6413, -73.7781],
     route: [
       [35.7720, 140.3929], // NRT
       [45.0000, 170.0000], // Pacific
@@ -70,15 +70,16 @@ export const SHIPMENT_DATA = {
       [40.6413, -100.7781], // USA
       [40.6413, -73.7781]   // JFK
     ],
-    telemetry: { altitude: "36,000 ft", speed: "890 km/h", temp: "-52°C", humidity: "12%" },
-    eta: "In 4h 20m",
-    delayRisk: "Low",
-    date: "2026-05-14",
+    telemetry: { altitude: "0 ft", speed: "0 km/h", temp: "15°C", humidity: "42%" },
+    eta: "Delivered",
+    delayRisk: "None",
+    date: "2026-05-15",
     events: [
       { time: "May 13, 16:20", location: "Tokyo (NRT)", status: "Shipment Accepted", type: "package", completed: true },
       { time: "May 14, 11:00", location: "Tokyo (NRT)", status: "Departed on Flight NH10", type: "plane", completed: true },
       { time: "May 14, 22:45", location: "In Air", status: "Crossing Pacific Ocean", type: "clock", completed: true },
-      { time: "Pending", location: "New York (JFK)", status: "Estimated Arrival", type: "map-pin", completed: false }
+      { time: "May 15, 08:30", location: "New York (JFK)", status: "Arrived at Destination", type: "map-pin", completed: true },
+      { time: "May 15, 09:15", location: "New York (JFK)", status: "Shipment Delivered", type: "check-circle", completed: true }
     ]
   }
 };

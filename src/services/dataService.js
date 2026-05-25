@@ -95,6 +95,17 @@ export const trackShipment = async (awb) => {
       message: `Backend proxy is offline. Track directly on the carrier website.`,
       carrierUrl: carrierUrlInfo.url,
       carrierName: carrierUrlInfo.carrierName,
+      data: {
+        awb: normalizedAwb,
+        carrier: carrierUrlInfo.carrierName,
+        carrierCode: extractPrefix(normalizedAwb),
+        status: 'Check Carrier Website',
+        origin: 'N/A',
+        destination: 'N/A',
+        weight: 'N/A',
+        pieces: 'N/A',
+        estimatedDelivery: 'Check Carrier Website'
+      }
     };
   }
 };
