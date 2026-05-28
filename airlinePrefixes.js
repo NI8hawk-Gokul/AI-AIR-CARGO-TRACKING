@@ -10,14 +10,14 @@ const AIRLINE_PREFIXES = {
   '176': { name: 'Emirates SkyCargo', code: 'EK', trackingUrl: 'https://eskycargo.emirates.com', buildUrl: (awb) => `https://eskycargo.emirates.com/app/offerBooking/#/shipment-tracking?awbNo=${awb.replace('-', '')}` },
   '607': { name: 'Etihad Cargo', code: 'EY', trackingUrl: 'https://etihadcargo.com', buildUrl: (awb) => `https://etihadcargo.com/en/e-services/track-your-shipments?awb=${awb.replace('-', '')}` },
   '164': { name: 'Saudia Cargo', code: 'SV', trackingUrl: 'https://www.saudiacargo.com', buildUrl: (awb) => `https://www.saudiacargo.com/tracking?awb=${awb}` },
-  '994': { name: 'Oman Air Cargo', code: 'WY', trackingUrl: 'https://www.omanair.com', buildUrl: (awb) => `https://www.omanair.com/cargo/tracking?awb=${awb}` },
+  '910': { name: 'Oman Air Cargo', code: 'WY', trackingUrl: 'https://www.omanair.com', buildUrl: (awb) => `https://www.omanair.com/cargo/tracking?awb=${awb}` },
 
   // --- India & South Asia ---
   '098': { name: 'Air India Cargo', code: 'AI', trackingUrl: 'https://www.aikinetix.com', buildUrl: (awb) => `https://www.aikinetix.com/search?type=awb&query=${awb.replace('-', '')}` },
-  '585': { name: 'IndiGo CarGo', code: '6E', trackingUrl: 'https://www.goindigo.in', buildUrl: (awb) => `https://www.goindigo.in/cargo/tracking.html?awb=${awb}` },
-  '624': { name: 'SpiceJet Cargo', code: 'SG', trackingUrl: 'https://book.spicejet.com', buildUrl: (awb) => `https://book.spicejet.com/cargo/tracking?awb=${awb}` },
+  '312': { name: 'IndiGo CarGo', code: '6E', trackingUrl: 'https://www.goindigo.in', buildUrl: (awb) => `https://www.goindigo.in/cargo/tracking.html?awb=${awb}` },
+  '775': { name: 'SpiceJet Cargo', code: 'SG', trackingUrl: 'https://book.spicejet.com', buildUrl: (awb) => `https://book.spicejet.com/cargo/tracking?awb=${awb}` },
   '781': { name: 'Blue Dart Aviation', code: 'BZ', trackingUrl: 'https://www.bluedart.com', buildUrl: (awb) => `https://www.bluedart.com/tracking?awb=${awb}` },
-  '217': { name: 'SriLankan Cargo', code: 'UL', trackingUrl: 'https://www.srilankan.com', buildUrl: (awb) => `https://www.srilankan.com/cargo/tracking?awb=${awb}` },
+  '603': { name: 'SriLankan Cargo', code: 'UL', trackingUrl: 'https://www.srilankan.com', buildUrl: (awb) => `https://www.srilankan.com/cargo/tracking?awb=${awb}` },
 
   // --- Europe ---
   '220': { name: 'Lufthansa Cargo', code: 'LH', trackingUrl: 'https://www.lufthansa-cargo.com', buildUrl: (awb) => `https://www.lufthansa-cargo.com/tracking/shipment/${awb.replace('-', '')}` },
@@ -36,7 +36,7 @@ const AIRLINE_PREFIXES = {
   '001': { name: 'American Airlines Cargo', code: 'AA', trackingUrl: 'https://www.aacargo.com', buildUrl: (awb) => `https://www.aacargo.com/shipping/tracking.jhtml?awb=${awb.replace('-', '')}` },
   '014': { name: 'Air Canada Cargo', code: 'AC', trackingUrl: 'https://www.aircanadacargo.com', buildUrl: (awb) => `https://www.aircanadacargo.com/tracking?awb=${awb.replace('-', '')}` },
   '023': { name: 'FedEx', code: 'FX', trackingUrl: 'https://www.fedex.com', buildUrl: (awb) => `https://www.fedex.com/fedextrack/?trknbr=${awb.replace('-', '')}` },
-  '618': { name: 'UPS Airlines', code: '5X', trackingUrl: 'https://www.ups.com', buildUrl: (awb) => `https://www.ups.com/track?tracknum=${awb.replace('-', '')}` },
+  '406': { name: 'UPS Airlines', code: '5X', trackingUrl: 'https://www.ups.com', buildUrl: (awb) => `https://www.ups.com/track?tracknum=${awb.replace('-', '')}` },
   '580': { name: 'DHL Aviation', code: 'DH', trackingUrl: 'https://www.dhl.com', buildUrl: (awb) => `https://www.dhl.com/en/express/tracking.html?AWB=${awb.replace('-', '')}` },
 
   // --- Asia Pacific ---
@@ -45,12 +45,13 @@ const AIRLINE_PREFIXES = {
   '205': { name: 'ANA Cargo', code: 'NH', trackingUrl: 'https://cargo.ana.co.jp', buildUrl: (awb) => `https://cargo.ana.co.jp/anaicargo/tracking?awb=${awb.replace('-', '')}` },
   '131': { name: 'Japan Airlines Cargo', code: 'JL', trackingUrl: 'https://www.jalcargo.com', buildUrl: (awb) => `https://www.jalcargo.com/cms/tracking?awb=${awb.replace('-', '')}` },
   '180': { name: 'Korean Air Cargo', code: 'KE', trackingUrl: 'https://cargo.koreanair.com', buildUrl: (awb) => `https://cargo.koreanair.com/tracking?awb=${awb.replace('-', '')}` },
-  '297': { name: 'Malaysia Airlines Cargo', code: 'MH', trackingUrl: 'https://www.maskargo.com', buildUrl: (awb) => `https://www.maskargo.com/tracking?awb=${awb.replace('-', '')}` },
+  '232': { name: 'Malaysia Airlines Cargo', code: 'MH', trackingUrl: 'https://www.maskargo.com', buildUrl: (awb) => `https://www.maskargo.com/tracking?awb=${awb.replace('-', '')}` },
   '217': { name: 'Thai Airways Cargo', code: 'TG', trackingUrl: 'https://www.thaicargo.com', buildUrl: (awb) => `https://www.thaicargo.com/tracking?awb=${awb.replace('-', '')}` },
   '999': { name: 'Air China Cargo', code: 'CA', trackingUrl: 'https://www.airchinacargo.com', buildUrl: (awb) => `https://www.airchinacargo.com/tracking?awb=${awb.replace('-', '')}` },
-  '112': { name: 'China Airlines Cargo', code: 'CI', trackingUrl: 'https://cargo.china-airlines.com', buildUrl: (awb) => `https://cargo.china-airlines.com/ccnetv2/content/manage/TracknTrace.aspx?awb=${awb.replace('-', '')}` },
-  '297': { name: 'EVA Air Cargo', code: 'BR', trackingUrl: 'https://www.brcargo.com', buildUrl: (awb) => `https://www.brcargo.com/tracking?awb=${awb.replace('-', '')}` },
-  '833': { name: 'Vistara Cargo', code: 'UK', trackingUrl: 'https://www.airindia.com', buildUrl: (awb) => `https://www.airindia.com/cargo/tracking?awb=${awb}` },
+  '112': { name: 'China Cargo Airlines', code: 'CK', trackingUrl: 'https://www.chinacargoairlines.com', buildUrl: (awb) => `https://www.chinacargoairlines.com/en/detail?billnumber=${awb.replace('-', '')}` },
+  '297': { name: 'China Airlines Cargo', code: 'CI', trackingUrl: 'https://cargo.china-airlines.com', buildUrl: (awb) => `https://cargo.china-airlines.com/ccnetv2/content/manage/TracknTrace.aspx?awb=${awb.replace('-', '')}` },
+  '695': { name: 'EVA Air Cargo', code: 'BR', trackingUrl: 'https://www.brcargo.com', buildUrl: (awb) => `https://www.brcargo.com/tracking?awb=${awb.replace('-', '')}` },
+  '228': { name: 'Vistara Cargo', code: 'UK', trackingUrl: 'https://www.airindia.com', buildUrl: (awb) => `https://www.airindia.com/cargo/tracking?awb=${awb}` },
 
   // --- Africa ---
   '071': { name: 'Ethiopian Airlines Cargo', code: 'ET', trackingUrl: 'https://www.ethiopianairlinescargo.com', buildUrl: (awb) => `https://www.ethiopianairlinescargo.com/tracking?awb=${awb.replace('-', '')}` },

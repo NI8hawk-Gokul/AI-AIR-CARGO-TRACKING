@@ -1,43 +1,14 @@
 import { SHIPMENT_DATA } from '../data/shipmentData';
-
-// Airline prefix mapping (client-side copy for URL building without server)
-const AIRLINE_PREFIXES = {
-  '157': { name: 'Qatar Airways Cargo', url: (awb) => `https://www.qrcargo.com/s/tracking?awb=${awb}` },
-  '176': { name: 'Emirates SkyCargo', url: (awb) => `https://eskycargo.emirates.com/app/offerBooking/#/shipment-tracking?awbNo=${awb.replace('-', '')}` },
-  '607': { name: 'Etihad Cargo', url: (awb) => `https://etihadcargo.com/en/e-services/track-your-shipments?awb=${awb.replace('-', '')}` },
-  '098': { name: 'Air India Cargo', url: (awb) => `https://www.aikinetix.com/search?type=awb&query=${awb.replace('-', '')}` },
-  '585': { name: 'IndiGo CarGo', url: (awb) => `https://www.goindigo.in/cargo/tracking.html?awb=${awb}` },
-  '220': { name: 'Lufthansa Cargo', url: (awb) => `https://www.lufthansa-cargo.com/tracking/shipment/${awb.replace('-', '')}` },
-  '125': { name: 'British Airways Cargo', url: (awb) => `https://www.iagcargo.com/track-shipment?awb=${awb.replace('-', '')}` },
-  '117': { name: 'Turkish Airlines Cargo', url: (awb) => `https://www.turkishcargo.com/en/tracking?awb=${awb.replace('-', '')}` },
-  '006': { name: 'Delta Cargo', url: (awb) => `https://www.deltacargo.com/Cargo/trackShipment?awbNumber=${awb.replace('-', '')}` },
-  '016': { name: 'United Cargo', url: (awb) => `https://www.unitedcargo.com/tracking?awb=${awb.replace('-', '')}` },
-  '001': { name: 'American Airlines Cargo', url: (awb) => `https://www.aacargo.com/shipping/tracking.jhtml?awb=${awb.replace('-', '')}` },
-  '023': { name: 'FedEx', url: (awb) => `https://www.fedex.com/fedextrack/?trknbr=${awb.replace('-', '')}` },
-  '160': { name: 'Cathay Cargo', url: (awb) => `https://www.cathaycargo.com/cargo-tracking/?awb=${awb.replace('-', '')}` },
-  '205': { name: 'ANA Cargo', url: (awb) => `https://cargo.ana.co.jp/anaicargo/tracking?awb=${awb.replace('-', '')}` },
-  '180': { name: 'Korean Air Cargo', url: (awb) => `https://cargo.koreanair.com/tracking?awb=${awb.replace('-', '')}` },
-  '057': { name: 'Air France Cargo', url: (awb) => `https://www.afklcargo.com/mycargo/shipment/detail/${awb.replace('-', '')}` },
-  '071': { name: 'Ethiopian Airlines Cargo', url: (awb) => `https://www.ethiopianairlinescargo.com/tracking?awb=${awb.replace('-', '')}` },
-  '045': { name: 'LATAM Cargo', url: (awb) => `https://www.latamcargo.com/en/trackshipment?docNumber=${awb.replace('-', '')}` },
-  '164': { name: 'Saudia Cargo', url: (awb) => `https://www.saudiacargo.com/tracking?awb=${awb}` },
-  '047': { name: 'Cargolux', url: (awb) => `https://www.cargolux.com/e-services/tracking?awb=${awb}` },
-  '014': { name: 'Air Canada Cargo', url: (awb) => `https://www.aircanadacargo.com/tracking?awb=${awb.replace('-', '')}` },
-  '131': { name: 'Japan Airlines Cargo', url: (awb) => `https://www.jalcargo.com/cms/tracking?awb=${awb.replace('-', '')}` },
-};
-
-function extractPrefix(awb) {
-  return awb.replace(/[\s-]/g, '').substring(0, 3);
-}
+import { getCarrierInfo, extractPrefix, buildTrackingUrl, buildFallbackTrackingUrl } from '../../airlinePrefixes';
 
 export const getCarrierTrackingUrl = (awb) => {
-  const prefix = extractPrefix(awb.trim().toUpperCase());
-  const carrier = AIRLINE_PREFIXES[prefix];
-  if (carrier) {
-    return { url: carrier.url(awb.trim().toUpperCase()), carrierName: carrier.name };
+  const normalizedAwb = awb.trim().toUpperCase();
+  const info = buildTrackingUrl(normalizedAwb);
+  if (info) {
+    return { url: info.url, carrierName: info.carrierName };
   }
   return {
-    url: `https://www.track-trace.com/aircargo?search=${awb.replace(/[\s-]/g, '')}`,
+    url: buildFallbackTrackingUrl(normalizedAwb),
     carrierName: 'Track-Trace (Universal)'
   };
 };
@@ -190,7 +161,7 @@ export const runShipmentAIAnalysis = async (awb) => {
 
   if (!shipment) {
     const prefix = normalizedAwb.replace(/[\s-]/g, '').substring(0, 3);
-    const carrier = AIRLINE_PREFIXES[prefix] || { name: 'Universal Cargo', code: 'UC' };
+    const carrier = getCarrierInfo(prefix) || { name: 'Universal Cargo', code: 'UC' };
     shipment = {
       awb: normalizedAwb,
       carrier: carrier.name,
@@ -257,7 +228,7 @@ export const addCustomShipment = async (formData) => {
   const isDelivered = status === 'Delivered' || status === 'Arrived';
   
   const prefix = awb.replace(/[\s-]/g, '').substring(0, 3);
-  const carrierInfo = AIRLINE_PREFIXES[prefix] || { name: 'Universal Cargo', code: 'UC' };
+  const carrierInfo = getCarrierInfo(prefix) || { name: 'Universal Cargo', code: 'UC' };
   
   const shipment = {
     awb,
@@ -342,6 +313,9 @@ export const trackShipment = async (awb) => {
           ...result,
           data: enrichedData
         };
+      } else if (!result.success && result.source === 'redirect') {
+        // Return custom redirect error response so frontend can show carrier links!
+        return result;
       }
     }
   } catch (err) {

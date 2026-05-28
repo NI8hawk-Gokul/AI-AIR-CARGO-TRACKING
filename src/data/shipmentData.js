@@ -81,6 +81,53 @@ export const SHIPMENT_DATA = {
       { time: "May 15, 08:30", location: "New York (JFK)", status: "Arrived at Destination", type: "map-pin", completed: true },
       { time: "May 15, 09:15", location: "New York (JFK)", status: "Shipment Delivered", type: "check-circle", completed: true }
     ]
+  },
+  "297-72328572": {
+    awb: "297-72328572",
+    carrier: "China Airlines Cargo",
+    status: "Delivered",
+    origin: "ORD - Chicago, USA",
+    destination: "KUL - Kuala Lumpur, Malaysia",
+    estimatedDelivery: "Mar 16, 2026 - 18:08",
+    weight: "801.3 Kg",
+    pieces: 16,
+    flight: "CI0721",
+    currentLocation: [2.7456, 101.7072],
+    route: [[41.9742, -87.9073], [25.0797, 121.2342], [2.7456, 101.7072]],
+    telemetry: { altitude: "0 ft", speed: "0 km/h", temp: "28°C", humidity: "75%" },
+    eta: "Delivered",
+    delayRisk: "None",
+    date: "2026-03-16",
+    flightSegments: [
+      { origin: 'ORD', destination: 'TPE', flight: 'CI-5239', depTime: '14-Mar-26 07:23', arrTime: '16-Mar-26 08:23', pieces: 16 },
+      { origin: 'TPE', destination: 'KUL', flight: 'CI-0721', depTime: '16-Mar-26 08:23', arrTime: '16-Mar-26 13:22', pieces: 16 }
+    ],
+    events: [
+      { time: "Mon, 16 Mar 2026 18:08:00", location: "KUL", status: "Delivered in KUL", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 14:16:00", location: "KUL", status: "Breakdown in KUL (Flight CI-0721)", details: "1 Pcs | 50.0 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 14:16:00", location: "KUL", status: "Breakdown in KUL (Flight CI-0721)", details: "5 Pcs | 250.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 13:22:00", location: "KUL", status: "Arrived in KUL on CI-0721", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 13:09:00", location: "KUL", status: "Arrived in KUL on CI-0721", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 08:39:21", location: "TPE", status: "Booked on CI-5239", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 08:39:21", location: "TPE", status: "Booked on CI-0721", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 08:23:01", location: "TPE", status: "Departed from TPE on CI-0721", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 06:58:35", location: "TPE", status: "Manifested on CI-0721", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 05:03:53", location: "TPE", status: "Built Up on CI-0721", details: "1 Pcs | 50.0 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 05:03:52", location: "TPE", status: "Offloaded on CI-0721", details: "1 Pcs | 50.0 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 04:58:03", location: "TPE", status: "Built Up on CI-0721", details: "5 Pcs | 250.3 Kg", completed: true },
+      { time: "Mon, 16 Mar 2026 04:58:02", location: "TPE", status: "Offloaded on CI-0721", details: "5 Pcs | 250.3 Kg", completed: true },
+      { time: "Thu, 12 Mar 2026 10:42:40", location: "ORD", status: "Booked on CI-0721", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Thu, 12 Mar 2026 10:42:40", location: "ORD", status: "Booked on CI-5225", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Thu, 12 Mar 2026 10:42:39", location: "ORD", status: "Accepted from shipper in ORD", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Thu, 12 Mar 2026 02:41:08", location: "TPE", status: "Booked on CI-5225", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Thu, 12 Mar 2026 02:41:08", location: "TPE", status: "Booked on CI-0721", details: "16 Pcs | 801.3 Kg", completed: true },
+      { time: "Wed, 11 Mar 2026 13:01:38", location: "ORD", status: "Booked on CI-5225", details: "16 Pcs | 800.0 Kg", completed: true },
+      { time: "Wed, 11 Mar 2026 13:01:38", location: "ORD", status: "Booked on CI-0721", details: "16 Pcs | 800.0 Kg", completed: true },
+      { time: "Wed, 11 Mar 2026 12:29:58", location: "ORD", status: "Booked on CI-5239", details: "16 Pcs | 800.0 Kg", completed: true },
+      { time: "Wed, 11 Mar 2026 12:29:58", location: "ORD", status: "Booked on CI-0721", details: "16 Pcs | 800.0 Kg", completed: true },
+      { time: "Wed, 11 Mar 2026 10:36:15", location: "ORD", status: "Booked on CI-5239", details: "7 Pcs | 399.6 Kg", completed: true },
+      { time: "Wed, 11 Mar 2026 10:36:15", location: "ORD", status: "Booked on CI-0721", details: "7 Pcs | 399.6 Kg", completed: true }
+    ]
   }
 };
 

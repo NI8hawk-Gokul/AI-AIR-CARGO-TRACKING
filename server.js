@@ -48,15 +48,16 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// AfterShip Configuration
+// API Tracking Configuration (AfterShip & TrackingMore)
 // ==========================================
 const AFTERSHIP_API_KEY = process.env.AFTERSHIP_API_KEY;
 const AFTERSHIP_BASE_URL = 'https://api.aftership.com/v4/trackings';
+const TRACKINGMORE_API_KEY = process.env.TRACKINGMORE_API_KEY;
 const CACHE_TTL = parseInt(process.env.CACHE_TTL || '3600000'); // 1 hour
 const trackingCache = new Map();
 
-if (!AFTERSHIP_API_KEY) {
-  console.warn('⚠️  WARNING: AFTERSHIP_API_KEY not set in .env - AfterShip tracking will be skipped');
+if (!TRACKINGMORE_API_KEY && !AFTERSHIP_API_KEY) {
+  console.warn('⚠️  WARNING: Neither TRACKINGMORE_API_KEY nor AFTERSHIP_API_KEY is set in .env');
 }
 
 // Rate limiting - simple in-memory store
@@ -136,21 +137,72 @@ async function queryAfterShip(awb) {
     const cleanAwb = awb.replace(/[- ]/g, '');
     console.log(`[AfterShip] Querying for AWB: ${cleanAwb}`);
 
-    const response = await axios.post(AFTERSHIP_BASE_URL, {
-      tracking: {
-        tracking_number: cleanAwb,
-        slug: 'auto'
-      }
-    }, {
-      headers: {
-        'aftership-api-key': AFTERSHIP_API_KEY,
-        'Content-Type': 'application/json'
-      },
-      timeout: parseInt(process.env.AFTERSHIP_TIMEOUT || '15000')
-    });
+    let tracking = null;
 
-    const tracking = response.data.data.tracking;
-    console.log(`[AfterShip] ✅ Found tracking data | Status: ${tracking.tag} | Events: ${tracking.checkpoints?.length || 0}`);
+    // 1. Try to GET the tracking first to see if it already exists
+    try {
+      const getResponse = await axios.get(`${AFTERSHIP_BASE_URL}?tracking_numbers=${cleanAwb}`, {
+        headers: {
+          'aftership-api-key': AFTERSHIP_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        timeout: parseInt(process.env.AFTERSHIP_TIMEOUT || '15000')
+      });
+
+      if (getResponse.data?.data?.trackings?.length > 0) {
+        tracking = getResponse.data.data.trackings[0];
+        console.log(`[AfterShip] ✅ Found existing tracking record`);
+      }
+    } catch (getErr) {
+      console.log(`[AfterShip] GET check failed/skipped: ${getErr.message}`);
+    }
+
+    // 2. If it doesn't exist, POST to create a new tracking
+    if (!tracking) {
+      console.log(`[AfterShip] 🆕 Creating new tracking for AWB: ${cleanAwb}`);
+      try {
+        const postResponse = await axios.post(AFTERSHIP_BASE_URL, {
+          tracking: {
+            tracking_number: cleanAwb
+            // Omit slug to let AfterShip auto-detect the carrier based on active couriers
+          }
+        }, {
+          headers: {
+            'aftership-api-key': AFTERSHIP_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          timeout: parseInt(process.env.AFTERSHIP_TIMEOUT || '15000')
+        });
+
+        tracking = postResponse.data?.data?.tracking;
+      } catch (postErr) {
+        // Handle "Tracking already exists" if GET check missed it somehow (e.g. race conditions)
+        if (postErr.response?.data?.meta?.code === 4003 || postErr.response?.status === 400) {
+          console.log(`[AfterShip] ⚠️ Tracking already exists in POST, fetching via list...`);
+          const fallbackGet = await axios.get(`${AFTERSHIP_BASE_URL}?tracking_numbers=${cleanAwb}`, {
+            headers: {
+              'aftership-api-key': AFTERSHIP_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            timeout: parseInt(process.env.AFTERSHIP_TIMEOUT || '15000')
+          });
+          if (fallbackGet.data?.data?.trackings?.length > 0) {
+            tracking = fallbackGet.data.data.trackings[0];
+          }
+        }
+        
+        if (!tracking) {
+          throw postErr;
+        }
+      }
+    }
+
+    if (!tracking) {
+      console.log(`[AfterShip] ⚠️ No tracking data could be retrieved`);
+      return null;
+    }
+
+    console.log(`[AfterShip] ✅ Loaded tracking data | Status: ${tracking.tag} | Events: ${tracking.checkpoints?.length || 0}`);
 
     // Transform AfterShip format to our format
     const events = (tracking.checkpoints || []).map((cp, idx) => ({
@@ -166,7 +218,7 @@ async function queryAfterShip(awb) {
     const transformedData = {
       awb: tracking.tracking_number,
       carrier: tracking.carrier_name || 'Unknown Carrier',
-      carrierCode: tracking.slug.toUpperCase(),
+      carrierCode: tracking.slug?.toUpperCase() || 'UNKNOWN',
       status: mapAftershipStatus(tracking.tag),
       origin: 'See tracking events',
       destination: lastCheckpoint.location || 'In transit',
@@ -190,6 +242,196 @@ async function queryAfterShip(awb) {
     }
     return null;
   }
+}
+
+/**
+ * Query TrackingMore API for tracking data
+ */
+async function queryTrackingMore(awb) {
+  if (!TRACKINGMORE_API_KEY) {
+    console.log('[TrackingMore] API key not configured - skipping');
+    return null;
+  }
+
+  try {
+    const cleanAwb = awb.replace(/[- ]/g, '').trim();
+    console.log(`[TrackingMore] Querying for AWB: ${cleanAwb}`);
+
+    // 1. Detect courier code first
+    let courierCode = null;
+    try {
+      const detectResponse = await axios.post('https://api.trackingmore.com/v4/couriers/detect', {
+        tracking_number: cleanAwb
+      }, {
+        headers: {
+          'Tracking-Api-Key': TRACKINGMORE_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+
+      if (detectResponse.data?.data?.length > 0) {
+        courierCode = detectResponse.data.data[0].courier_code;
+        console.log(`[TrackingMore] 🔍 Detected courier: ${courierCode}`);
+      }
+    } catch (detectErr) {
+      console.log(`[TrackingMore] Courier detection failed: ${detectErr.message}`);
+    }
+
+    // Fallback: If detection fails, try to map from prefix
+    if (!courierCode) {
+      const prefix = extractPrefix(awb);
+      const carrierInfo = getCarrierInfo(prefix);
+      if (carrierInfo && carrierInfo.code) {
+        courierCode = carrierInfo.code.toLowerCase();
+      }
+    }
+
+    let trackingItem = null;
+
+    // 2. Try to GET the tracking details if it's already registered
+    if (courierCode) {
+      try {
+        const getResponse = await axios.get(`https://api.trackingmore.com/v4/trackings/get?tracking_numbers=${cleanAwb}&courier_code=${courierCode}`, {
+          headers: {
+            'Tracking-Api-Key': TRACKINGMORE_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        });
+
+        if (getResponse.data?.data?.length > 0) {
+          trackingItem = getResponse.data.data[0];
+          console.log(`[TrackingMore] ✅ Found existing tracking record`);
+        }
+      } catch (getErr) {
+        console.log(`[TrackingMore] GET check failed: ${getErr.message}`);
+      }
+    } else {
+      // Try GET without courier code
+      try {
+        const getResponse = await axios.get(`https://api.trackingmore.com/v4/trackings/get?tracking_numbers=${cleanAwb}`, {
+          headers: {
+            'Tracking-Api-Key': TRACKINGMORE_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        });
+
+        if (getResponse.data?.data?.length > 0) {
+          trackingItem = getResponse.data.data[0];
+          courierCode = trackingItem.courier_code;
+          console.log(`[TrackingMore] ✅ Found existing tracking record without specifying courier code`);
+        }
+      } catch (getErr) {
+        console.log(`[TrackingMore] GET check without courier code failed: ${getErr.message}`);
+      }
+    }
+
+    // 3. If it doesn't exist, create it (POST /trackings/create)
+    if (!trackingItem && courierCode) {
+      console.log(`[TrackingMore] 🆕 Registering new tracking for AWB: ${cleanAwb} with courier: ${courierCode}`);
+      try {
+        const postResponse = await axios.post('https://api.trackingmore.com/v4/trackings/create', {
+          tracking_number: cleanAwb,
+          courier_code: courierCode
+        }, {
+          headers: {
+            'Tracking-Api-Key': TRACKINGMORE_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          timeout: 15000
+        });
+
+        if (postResponse.data?.data) {
+          trackingItem = postResponse.data.data;
+          console.log(`[TrackingMore] ✅ Registered tracking successfully`);
+        }
+      } catch (postErr) {
+        // Handle "already exists" error (meta code 4101 or 400 Bad Request) just in case
+        if (postErr.response?.data?.meta?.code === 4101 || postErr.response?.status === 400) {
+          console.log(`[TrackingMore] ⚠️ Tracking already exists in POST, retrieving...`);
+          const fallbackGet = await axios.get(`https://api.trackingmore.com/v4/trackings/get?tracking_numbers=${cleanAwb}&courier_code=${courierCode}`, {
+            headers: {
+              'Tracking-Api-Key': TRACKINGMORE_API_KEY,
+              'Content-Type': 'application/json'
+            },
+            timeout: 15000
+          });
+          if (fallbackGet.data?.data?.length > 0) {
+            trackingItem = fallbackGet.data.data[0];
+          }
+        }
+
+        if (!trackingItem) {
+          throw postErr;
+        }
+      }
+    }
+
+    if (!trackingItem) {
+      console.log(`[TrackingMore] ⚠️ Tracking record could not be retrieved or created`);
+      return null;
+    }
+
+    const trackinfo = trackingItem.origin_info?.trackinfo || trackingItem.destination_info?.trackinfo || [];
+    console.log(`[TrackingMore] ✅ Loaded tracking data | Status: ${trackingItem.delivery_status} | Events: ${trackinfo.length}`);
+
+    // Transform to standard format
+    const events = trackinfo.map((ti, idx) => ({
+      time: ti.checkpoint_date ? new Date(ti.checkpoint_date).toLocaleString() : 'N/A',
+      location: ti.location || '',
+      status: ti.tracking_detail || 'Status update',
+      details: ti.checkpoint_delivery_status || '',
+      type: idx === 0 ? 'package' : (idx === trackinfo.length - 1 ? 'check-circle' : 'plane'),
+      completed: true
+    }));
+
+    const lastCheckpoint = trackinfo[0] || {};
+    
+    // Attempt to capitalize carrier name
+    const prefix = extractPrefix(awb);
+    const carrierInfo = getCarrierInfo(prefix);
+    const carrierName = carrierInfo ? carrierInfo.name : (trackingItem.courier_code ? trackingItem.courier_code.toUpperCase() : 'Unknown Courier');
+
+    const transformedData = {
+      awb: trackingItem.tracking_number,
+      carrier: carrierName,
+      carrierCode: trackingItem.courier_code?.toUpperCase() || 'UNKNOWN',
+      status: mapTrackingmoreStatus(trackingItem.delivery_status),
+      origin: trackingItem.origin_country || 'See tracking events',
+      destination: lastCheckpoint.location || trackingItem.destination_country || 'In transit',
+      events: events,
+      weight: 'N/A',
+      pieces: 'N/A',
+      estimatedDelivery: trackingItem.scheduled_delivery_date || trackingItem.origin_info?.milestone_date?.delivery_date ? new Date(trackingItem.scheduled_delivery_date || trackingItem.origin_info.milestone_date.delivery_date).toLocaleString() : 'N/A',
+      flight: 'N/A'
+    };
+
+    return transformedData;
+  } catch (err) {
+    console.error(`[TrackingMore] Error: ${err.message}`);
+    if (err.response?.status === 401) {
+      console.error('[TrackingMore] ❌ Invalid API key - check .env file');
+    }
+    return null;
+  }
+}
+
+/**
+ * Map TrackingMore delivery_status to our format
+ */
+function mapTrackingmoreStatus(status) {
+  const statusMap = {
+    'pending': 'Pending',
+    'transit': 'In Transit',
+    'pickup': 'Out for Delivery',
+    'delivered': 'Delivered',
+    'exception': 'Exception',
+    'undelivered': 'Exception',
+    'expired': 'Expired'
+  };
+  return statusMap[status?.toLowerCase()] || status || 'Unknown';
 }
 
 /**
@@ -376,20 +618,32 @@ app.get('/api/track/:awb', rateLimit, async (req, res) => {
       });
     }
 
-    // ========== STEP 2: Try AfterShip API ==========
-    console.log('[Track] 📡 Attempting AfterShip API...');
-    const aftershipData = await queryAfterShip(awb);
+    // ========== STEP 2: Try API Tracking Providers ==========
+    let apiTrackingData = null;
+    let source = null;
 
-    if (aftershipData) {
+    if (TRACKINGMORE_API_KEY) {
+      console.log('[Track] 📡 Attempting TrackingMore API...');
+      apiTrackingData = await queryTrackingMore(awb);
+      source = 'trackingmore';
+    }
+
+    if (!apiTrackingData && AFTERSHIP_API_KEY) {
+      console.log('[Track] 📡 Attempting AfterShip API...');
+      apiTrackingData = await queryAfterShip(awb);
+      source = 'aftership';
+    }
+
+    if (apiTrackingData) {
       // Cache the result
-      setInCache(awb, aftershipData);
+      setInCache(awb, apiTrackingData);
 
       // Save to database
       if (supabase) {
         try {
-          const isDelivered = aftershipData.status === 'Delivered' || aftershipData.status === 'Arrived';
+          const isDelivered = apiTrackingData.status === 'Delivered' || apiTrackingData.status === 'Arrived';
           const enriched = {
-            ...aftershipData,
+            ...apiTrackingData,
             aiAnalysisRun: isDelivered ? true : false,
             delayRisk: isDelivered ? "None" : undefined,
             delayRiskPercent: isDelivered ? 0 : undefined,
@@ -403,10 +657,10 @@ app.get('/api/track/:awb', rateLimit, async (req, res) => {
 
       return res.json({
         success: true,
-        source: 'aftership',
-        data: aftershipData,
+        source: source,
+        data: apiTrackingData,
         carrierUrl: trackingUrlInfo?.url,
-        carrierName: aftershipData.carrier,
+        carrierName: apiTrackingData.carrier,
         fallbackUrl
       });
     }
@@ -520,7 +774,7 @@ app.get('/api/carrier/:awb', (req, res) => {
  */
 app.get('/api/db/shipments', async (req, res) => {
   if (!supabase) {
-    return res.status(500).json({ success: false, message: 'Database not initialized' });
+    return res.json({ success: false, offline: true, message: 'Database not initialized', data: [] });
   }
   try {
     const { data, error } = await supabase.from('shipments').select('*');
@@ -539,7 +793,7 @@ app.get('/api/db/shipments', async (req, res) => {
  */
 app.post('/api/db/shipments', async (req, res) => {
   if (!supabase) {
-    return res.status(500).json({ success: false, message: 'Database not initialized' });
+    return res.json({ success: false, offline: true, message: 'Database not initialized' });
   }
   try {
     const shipment = req.body;
@@ -562,7 +816,7 @@ app.post('/api/db/shipments', async (req, res) => {
  */
 app.get('/api/db/history', async (req, res) => {
   if (!supabase) {
-    return res.status(500).json({ success: false, message: 'Database not initialized' });
+    return res.json({ success: false, offline: true, message: 'Database not initialized', data: [] });
   }
   try {
     const { data, error } = await supabase
@@ -584,7 +838,7 @@ app.get('/api/db/history', async (req, res) => {
  */
 app.post('/api/db/history', async (req, res) => {
   if (!supabase) {
-    return res.status(500).json({ success: false, message: 'Database not initialized' });
+    return res.json({ success: false, offline: true, message: 'Database not initialized' });
   }
   try {
     const historyItem = req.body;
@@ -618,7 +872,7 @@ app.post('/api/db/history', async (req, res) => {
  */
 app.post('/api/db/analysis/:awb', async (req, res) => {
   if (!supabase) {
-    return res.status(500).json({ success: false, message: 'Database not initialized' });
+    return res.json({ success: false, offline: true, message: 'Database not initialized' });
   }
   try {
     const awb = req.params.awb.trim().toUpperCase();
@@ -699,6 +953,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     airlines: 40,
+    trackingmore: TRACKINGMORE_API_KEY ? '✅ Configured' : '⚠️ Not configured',
     aftership: AFTERSHIP_API_KEY ? '✅ Configured' : '⚠️ Not configured'
   });
 });
@@ -710,7 +965,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'dist')));
 
 // Serve index.html for all SPA routes (must be placed after all API endpoints)
-app.get('*', (req, res) => {
+app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
@@ -726,6 +981,7 @@ app.listen(PORT, () => {
   console.log('  ║   📋 /api/carrier/:awb   → Carrier lookup              ║');
   console.log('  ║   💚 /api/health         → Health check                ║');
   console.log('  ║                                                        ║');
+  console.log(`  ║   🌐 TrackingMore: ${TRACKINGMORE_API_KEY ? '✅ ENABLED' : '⚠️ DISABLED (set TRACKINGMORE_API_KEY)'}                  ║`);
   console.log(`  ║   🌐 AfterShip: ${AFTERSHIP_API_KEY ? '✅ ENABLED' : '⚠️ DISABLED (set AFTERSHIP_API_KEY)'}                        ║`);
   console.log('  ║   🔄 Cache TTL: 1 hour                                 ║');
   console.log('  ║   📊 Fallback: Web Scraping + Carrier Redirect        ║');
